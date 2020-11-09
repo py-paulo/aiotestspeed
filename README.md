@@ -9,3 +9,5 @@
 </p>
 
 ---
+
+This project was made based on the existing [Speedtest](https://github.com/sivel/speedtest-cli) from which we shared several code snippets, what I did were few modifications to work asynchronously.
