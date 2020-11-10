@@ -833,6 +833,35 @@ def do_nothing(*args, **kwargs):
     pass
 
 
+class AioHTTPDownloader(aiobject):
+    """Thread class for retrieving a URL"""
+
+    async def __init__(self, i, request, start, timeout, opener=None):
+        self.request = request
+        self.result = [0]
+        self.starttime = start
+        self.timeout = timeout
+        self.i = i
+        if opener:
+            self._opener = opener.open
+        else:
+            self._opener = urlopen
+        await self.run()
+
+    async def run(self):
+        try:
+            if (timeit.default_timer() - self.starttime) <= self.timeout:
+                f = self._opener(self.request)
+                while ((timeit.default_timer() - self.starttime) <=
+                        self.timeout):
+                    self.result.append(len(f.read(10240)))
+                    if self.result[-1] == 0:
+                        break
+                f.close()
+        except IOError:
+            pass
+
+
 class HTTPDownloader(threading.Thread):
     """Thread class for retrieving a URL"""
 
@@ -1559,18 +1588,19 @@ class Speedtest(aiobject):
         printer('Best Server:\n%r' % best, debug=True)
         return best
 
-    def download(self, callback=do_nothing, threads=None):
+    async def download(self, callback=do_nothing, threads=None):
         """Test download speed against speedtest.net
 
         A ``threads`` value of ``None`` will fall back to those dictated
         by the speedtest.net configuration
         """
 
-        urls = []
+        urls, finished = [], []
         for size in self.config['sizes']['download']:
             for _ in range(0, self.config['counts']['download']):
+                best = await self.best
                 urls.append('%s/random%sx%s.jpg' %
-                            (os.path.dirname(self.best['url']), size, size))
+                            (os.path.dirname(best['url']), size, size))
 
         request_count = len(urls)
         requests = []
@@ -1579,59 +1609,41 @@ class Speedtest(aiobject):
                 build_request(url, bump=i, secure=self._secure)
             )
 
-        max_threads = threads or self.config['threads']['download']
-        in_flight = {'threads': 0}
+        async def __aio_http_download(i, request, start, timeout, opener):
+            aiod = await AioHTTPDownloader(
+                i,
+                request,
+                start,
+                timeout,
+                opener=opener
+            )
+            return aiod.result
 
-        def producer(q, requests, request_count):
-            for i, request in enumerate(requests):
-                thread = HTTPDownloader(
-                    i,
-                    request,
-                    start,
-                    self.config['length']['download'],
-                    opener=self._opener,
-                    shutdown_event=self._shutdown_event
-                )
-                while in_flight['threads'] >= max_threads:
-                    timeit.time.sleep(0.001)
-                thread.start()
-                q.put(thread, True)
-                in_flight['threads'] += 1
-                callback(i, request_count, start=True)
-
-        finished = []
-
-        def consumer(q, request_count):
-            _is_alive = thread_is_alive
-            while len(finished) < request_count:
-                thread = q.get(True)
-                while _is_alive(thread):
-                    thread.join(timeout=0.001)
-                in_flight['threads'] -= 1
-                finished.append(sum(thread.result))
-                callback(thread.i, request_count, end=True)
-
-        q = Queue(max_threads)
-        prod_thread = threading.Thread(target=producer,
-                                       args=(q, requests, request_count))
-        cons_thread = threading.Thread(target=consumer,
-                                       args=(q, request_count))
         start = timeit.default_timer()
-        prod_thread.start()
-        cons_thread.start()
-        _is_alive = thread_is_alive
-        while _is_alive(prod_thread):
-            prod_thread.join(timeout=0.001)
-        while _is_alive(cons_thread):
-            cons_thread.join(timeout=0.001)
+
+        coroutines = [
+            __aio_http_download(
+                i,
+                request,
+                start,
+                self.config['length']['download'],
+                self._opener
+            ) for (i, request) in enumerate(requests)
+        ]
+        completed, _ = await asyncio.wait(coroutines)
 
         stop = timeit.default_timer()
+
+        for task in completed:
+            finished.append(sum(task.result()))
+
         self.results.bytes_received = sum(finished)
         self.results.download = (
             (self.results.bytes_received / (stop - start)) * 8.0
         )
         if self.results.download > 100000:
             self.config['threads']['upload'] = 8
+
         return self.results.download
 
     def upload(self, callback=do_nothing, pre_allocate=True, threads=None):
