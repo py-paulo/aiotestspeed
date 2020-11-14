@@ -268,6 +268,7 @@ else:
 
 
 # Exception "constants" to support Python 2 through Python 3
+HTTP_ERRORS = ()
 try:
     import ssl
     try:
@@ -833,8 +834,7 @@ def do_nothing(*args, **kwargs):
     pass
 
 
-class AioHTTPDownloader(aiobject):
-    """Thread class for retrieving a URL"""
+class aioHTTPDownloader(aiobject):
 
     async def __init__(self, i, request, start, timeout, opener=None):
         self.request = request
@@ -898,20 +898,16 @@ class HTTPDownloader(threading.Thread):
             pass
 
 
+
 class HTTPUploaderData(object):
     """File like object to improve cutting off the upload once the timeout
-    has been reached
+    has been reached.
     """
 
-    def __init__(self, length, start, timeout, shutdown_event=None):
+    def __init__(self, length, start, timeout):
         self.length = length
         self.start = start
         self.timeout = timeout
-
-        if shutdown_event:
-            self._shutdown_event = shutdown_event
-        else:
-            self._shutdown_event = FakeShutdownEvent()
 
         self._data = None
 
@@ -940,8 +936,7 @@ class HTTPUploaderData(object):
         return self._data
 
     def read(self, n=10240):
-        if ((timeit.default_timer() - self.start) <= self.timeout and
-                not self._shutdown_event.isSet()):
+        if (timeit.default_timer() - self.start) <= self.timeout:
             chunk = self.data.read(n)
             self.total.append(len(chunk))
             return chunk
@@ -950,6 +945,43 @@ class HTTPUploaderData(object):
 
     def __len__(self):
         return self.length
+
+
+class aioHTTPUploader(aiobject):
+
+    async def __init__(self, i, request, start, size, timeout, opener=None) -> None:
+        self.request = request
+        self.request.data.start = self.starttime = start
+        self.size = size
+        self.result = None
+        self.timeout = timeout
+        self.i = i
+        if opener:
+            self._opener = opener.open
+        else:
+            self._opener = urlopen
+        await self.run()
+
+    async def run(self):
+        request = self.request
+        try:
+            if (timeit.default_timer() - self.starttime) <= self.timeout:
+                try:
+                    f = self._opener(request)
+                except TypeError:
+                    # PY24 expects a string or buffer
+                    # This also causes issues with Ctrl-C, but we will concede
+                    # for the moment that Ctrl-C on PY24 isn't immediate
+                    request = build_request(self.request.get_full_url(),
+                                            data=request.data.read(self.size))
+                    f = self._opener(request)
+                f.read(11)
+                f.close()
+                self.result = sum(self.request.data.total)
+            else:
+                self.result = 0
+        except (IOError, SpeedtestUploadTimeout):
+            self.result = sum(self.request.data.total)
 
 
 class HTTPUploader(threading.Thread):
@@ -1610,7 +1642,7 @@ class Speedtest(aiobject):
             )
 
         async def __aio_http_download(i, request, start, timeout, opener):
-            aiod = await AioHTTPDownloader(
+            aiod = await aioHTTPDownloader(
                 i,
                 request,
                 start,
@@ -1628,7 +1660,10 @@ class Speedtest(aiobject):
                 start,
                 self.config['length']['download'],
                 self._opener
-            ) for (i, request) in enumerate(requests)
+            ) for (
+                i,
+                request
+            ) in enumerate(requests)
         ]
         completed, _ = await asyncio.wait(coroutines)
 
@@ -1646,14 +1681,11 @@ class Speedtest(aiobject):
 
         return self.results.download
 
-    def upload(self, callback=do_nothing, pre_allocate=True, threads=None):
+    async def upload(self, callback=do_nothing, pre_allocate=True):
         """Test upload speed against speedtest.net
-
-        A ``threads`` value of ``None`` will fall back to those dictated
-        by the speedtest.net configuration
         """
 
-        sizes = []
+        sizes, finished, requests = [], [], []
 
         for size in self.config['sizes']['upload']:
             for _ in range(0, self.config['counts']['upload']):
@@ -1662,74 +1694,60 @@ class Speedtest(aiobject):
         # request_count = len(sizes)
         request_count = self.config['upload_max']
 
-        requests = []
-        for i, size in enumerate(sizes):
+        for _, size in enumerate(sizes):
             # We set ``0`` for ``start`` and handle setting the actual
             # ``start`` in ``HTTPUploader`` to get better measurements
             data = HTTPUploaderData(
                 size,
                 0,
-                self.config['length']['upload'],
-                shutdown_event=self._shutdown_event
+                self.config['length']['upload']
             )
             if pre_allocate:
                 data.pre_allocate()
 
             headers = {'Content-length': size}
+            best = await self.best
+
             requests.append(
                 (
-                    build_request(self.best['url'], data, secure=self._secure,
-                                  headers=headers),
+                    build_request(best['url'], data, secure=self._secure,
+                        headers=headers),
                     size
                 )
             )
-
-        max_threads = threads or self.config['threads']['upload']
-        in_flight = {'threads': 0}
-
-        def producer(q, requests, request_count):
-            for i, request in enumerate(requests[:request_count]):
-                thread = HTTPUploader(
-                    i,
-                    request[0],
-                    start,
-                    request[1],
-                    self.config['length']['upload'],
-                    opener=self._opener,
-                    shutdown_event=self._shutdown_event
-                )
-                while in_flight['threads'] >= max_threads:
-                    timeit.time.sleep(0.001)
-                thread.start()
-                q.put(thread, True)
-                in_flight['threads'] += 1
-                callback(i, request_count, start=True)
-
-        finished = []
-
-        def consumer(q, request_count):
-            _is_alive = thread_is_alive
-            while len(finished) < request_count:
-                thread = q.get(True)
-                while _is_alive(thread):
-                    thread.join(timeout=0.001)
-                in_flight['threads'] -= 1
-                finished.append(thread.result)
-                callback(thread.i, request_count, end=True)
-
-        q = Queue(threads or self.config['threads']['upload'])
-        prod_thread = threading.Thread(target=producer,
-                                       args=(q, requests, request_count))
-        cons_thread = threading.Thread(target=consumer,
-                                       args=(q, request_count))
+        
+        async def __aio_http_upload(i, request, start, size, timeout, opener):
+            aiod = await aioHTTPUploader(
+                i,
+                request,
+                start,
+                size,
+                timeout,
+                opener=opener
+            )
+            return aiod.result
+        
         start = timeit.default_timer()
-        prod_thread.start()
-        cons_thread.start()
-        _is_alive = thread_is_alive
-        while _is_alive(prod_thread):
-            prod_thread.join(timeout=0.1)
-        while _is_alive(cons_thread):
-            cons_thread.join(timeout=0.1)
+        
+        coroutines = [
+            __aio_http_upload(
+                i,
+                request[0],
+                start,
+                request[1],
+                self.config['length']['upload'],
+                self._opener
+            ) for (
+                i,
+                request
+            ) in enumerate(requests[:request_count])
+        ]
+        completed, _ = await asyncio.wait(coroutines)
+
+        stop = timeit.default_timer()
+
+        for task in completed:
+            finished.append(task.result())
 
         stop = timeit.default_timer()
         self.results.bytes_sent = sum(finished)
