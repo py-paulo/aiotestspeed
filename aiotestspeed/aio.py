@@ -7,6 +7,7 @@ import csv
 import sys
 import math
 import errno
+import click
 import signal
 import socket
 import timeit
@@ -195,67 +196,6 @@ else:
         except AttributeError:
             return v
 
-    def print_(*args, **kwargs):
-        """The new-style print function for Python 2.4 and 2.5.
-
-        Taken from https://pypi.python.org/pypi/six/
-
-        Modified to set encoding to UTF-8 always, and to flush after write
-        """
-        fp = kwargs.pop("file", sys.stdout)
-        if fp is None:
-            return
-
-        def write(data):
-            if not isinstance(data, basestring):
-                data = str(data)
-            # If the file has an encoding, encode unicode with it.
-            encoding = 'utf8'  # Always trust UTF-8 for output
-            if (isinstance(fp, file) and
-                    isinstance(data, unicode) and
-                    encoding is not None):
-                errors = getattr(fp, "errors", None)
-                if errors is None:
-                    errors = "strict"
-                data = data.encode(encoding, errors)
-            fp.write(data)
-            fp.flush()
-        want_unicode = False
-        sep = kwargs.pop("sep", None)
-        if sep is not None:
-            if isinstance(sep, unicode):
-                want_unicode = True
-            elif not isinstance(sep, str):
-                raise TypeError("sep must be None or a string")
-        end = kwargs.pop("end", None)
-        if end is not None:
-            if isinstance(end, unicode):
-                want_unicode = True
-            elif not isinstance(end, str):
-                raise TypeError("end must be None or a string")
-        if kwargs:
-            raise TypeError("invalid keyword arguments to print()")
-        if not want_unicode:
-            for arg in args:
-                if isinstance(arg, unicode):
-                    want_unicode = True
-                    break
-        if want_unicode:
-            newline = unicode("\n")
-            space = unicode(" ")
-        else:
-            newline = "\n"
-            space = " "
-        if sep is None:
-            sep = space
-        if end is None:
-            end = newline
-        for i, arg in enumerate(args):
-            if i:
-                write(sep)
-            write(arg)
-        write(end)
-
 if PY32PLUS:
     etree_iter = ET.Element.iter
 elif PY25PLUS:
@@ -268,7 +208,6 @@ else:
 
 
 # Exception "constants" to support Python 2 through Python 3
-HTTP_ERRORS = ()
 try:
     import ssl
     try:
@@ -631,12 +570,11 @@ def build_opener(source_address=None, timeout=10):
     `User-Agent`
     """
 
-    printer('Timeout set to %d' % timeout, debug=True)
+    # printer('Timeout set to %d' % timeout, debug=True)
 
     if source_address:
         source_address_tuple = (source_address, 0)
-        printer('Binding to source address: %r' % (source_address_tuple,),
-                debug=True)
+        # printer('Binding to source address: %r' % (source_address_tuple,), debug=True)
     else:
         source_address_tuple = None
 
@@ -728,7 +666,7 @@ def build_user_agent():
         'speedtest-cli/%s' % __version__
     )
     user_agent = ' '.join(ua_tuple)
-    printer('User-Agent: %s' % user_agent, debug=True)
+    # printer('User-Agent: %s' % user_agent, debug=True)
     return user_agent
 
 
@@ -761,8 +699,7 @@ def build_request(url, data=None, headers=None, bump='0', secure=False):
         'Cache-Control': 'no-cache',
     })
 
-    printer('%s %s' % (('GET', 'POST')[bool(data)], final_url),
-            debug=True)
+    # printer('%s %s' % (('GET', 'POST')[bool(data)], final_url), debug=True)
 
     return Request(final_url, data=data, headers=headers)
 
@@ -780,7 +717,8 @@ async def catch_request(request, opener=None):
     try:
         uh = _open(request)
         if request.get_full_url() != uh.geturl():
-            printer('Redirected to %s' % uh.geturl(), debug=True)
+            pass
+            # print('Redirected to %s' % uh.geturl())
         return uh, False
     except HTTP_ERRORS:
         e = get_exception()
@@ -1252,7 +1190,7 @@ class Speedtest(aiobject):
 
         configxml = ''.encode().join(configxml_list)
 
-        printer('Config XML:\n%s' % configxml, debug=True)
+        # printer('Config XML:\n%s' % configxml, debug=True)
 
         try:
             try:
@@ -1279,7 +1217,6 @@ class Speedtest(aiobject):
             server_config = get_attributes_by_tag_name(root, 'server-config')
             download = get_attributes_by_tag_name(root, 'download')
             upload = get_attributes_by_tag_name(root, 'upload')
-            # times = get_attributes_by_tag_name(root, 'times')
             client = get_attributes_by_tag_name(root, 'client')
 
         ignore_servers = list(
@@ -1332,7 +1269,7 @@ class Speedtest(aiobject):
                 (client.get('lat'), client.get('lon'))
             )
 
-        printer('Config:\n%r' % self.config, debug=True)
+        # printer('Config:\n%r' % self.config, debug=True)
 
         return self.config
 
@@ -1413,7 +1350,7 @@ class Speedtest(aiobject):
         for serversxml_list in servers_xml_list:
             serversxml = ''.encode().join(serversxml_list)
 
-            printer('Servers XML:\n%s' % serversxml, debug=True)
+            # printer('Servers XML:\n%s' % serversxml, debug=True)
 
             try:
                 try:
@@ -1542,7 +1479,7 @@ class Speedtest(aiobject):
                 continue
             break
 
-        printer('Closest Servers:\n%r' % self.closest, debug=True)
+        # printer('Closest Servers:\n%r' % self.closest, debug=True)
         return self.closest
 
     async def get_best_server(self, servers=None):
@@ -1569,8 +1506,7 @@ class Speedtest(aiobject):
             latency_url = '%s/latency.txt?x=%s' % (url, stamp)
             for i in range(0, 3):
                 this_latency_url = '%s.%s' % (latency_url, i)
-                printer('%s %s' % ('GET', this_latency_url),
-                        debug=True)
+                # printer('%s %s' % ('GET', this_latency_url), debug=True)
                 urlparts = urlparse(latency_url)
                 try:
                     if urlparts[0] == 'https':
@@ -1591,7 +1527,7 @@ class Speedtest(aiobject):
                     total = (timeit.default_timer() - start)
                 except HTTP_ERRORS:
                     e = get_exception()
-                    printer('ERROR: %r' % e, debug=True)
+                    print('ERROR: %r' % e, debug=True)
                     cum.append(3600)
                     continue
 
@@ -1617,7 +1553,7 @@ class Speedtest(aiobject):
         self.results.server = best
 
         self._best.update(best)
-        printer('Best Server:\n%r' % best, debug=True)
+        # printer('Best Server:\n%r' % best, debug=True)
         return best
 
     async def download(self, callback=do_nothing, threads=None):
@@ -1691,7 +1627,6 @@ class Speedtest(aiobject):
             for _ in range(0, self.config['counts']['upload']):
                 sizes.append(size)
 
-        # request_count = len(sizes)
         request_count = self.config['upload_max']
 
         for _, size in enumerate(sizes):
@@ -1757,333 +1692,8 @@ class Speedtest(aiobject):
         return self.results.upload
 
 
-def ctrl_c(shutdown_event):
-    """Catch Ctrl-C key sequence and set a SHUTDOWN_EVENT for our threaded
-    operations
-    """
-    def inner(signum, frame):
-        shutdown_event.set()
-        printer('\nCancelling...', error=True)
-        sys.exit(0)
-    return inner
-
-
-def version():
-    """Print the version"""
-
-    printer('speedtest-cli %s' % __version__)
-    printer('Python %s' % sys.version.replace('\n', ''))
-    sys.exit(0)
-
-
 def csv_header(delimiter=','):
     """Print the CSV Headers"""
 
-    printer(SpeedtestResults.csv_header(delimiter=delimiter))
+    print(SpeedtestResults.csv_header(delimiter=delimiter))
     sys.exit(0)
-
-
-def parse_args():
-    """Function to handle building and parsing of command line arguments"""
-    description = (
-        'Command line interface for testing internet bandwidth using '
-        'speedtest.net.\n'
-        '------------------------------------------------------------'
-        '--------------\n'
-        'https://github.com/sivel/speedtest-cli')
-
-    parser = ArgParser(description=description)
-    # Give optparse.OptionParser an `add_argument` method for
-    # compatibility with argparse.ArgumentParser
-    try:
-        parser.add_argument = parser.add_option
-    except AttributeError:
-        pass
-    parser.add_argument('--no-download', dest='download', default=True,
-                        action='store_const', const=False,
-                        help='Do not perform download test')
-    parser.add_argument('--no-upload', dest='upload', default=True,
-                        action='store_const', const=False,
-                        help='Do not perform upload test')
-    parser.add_argument('--single', default=False, action='store_true',
-                        help='Only use a single connection instead of '
-                             'multiple. This simulates a typical file '
-                             'transfer.')
-    parser.add_argument('--bytes', dest='units', action='store_const',
-                        const=('byte', 8), default=('bit', 1),
-                        help='Display values in bytes instead of bits. Does '
-                             'not affect the image generated by --share, nor '
-                             'output from --json or --csv')
-    parser.add_argument('--share', action='store_true',
-                        help='Generate and provide a URL to the speedtest.net '
-                             'share results image, not displayed with --csv')
-    parser.add_argument('--simple', action='store_true', default=False,
-                        help='Suppress verbose output, only show basic '
-                             'information')
-    parser.add_argument('--csv', action='store_true', default=False,
-                        help='Suppress verbose output, only show basic '
-                             'information in CSV format. Speeds listed in '
-                             'bit/s and not affected by --bytes')
-    parser.add_argument('--csv-delimiter', default=',', type=PARSER_TYPE_STR,
-                        help='Single character delimiter to use in CSV '
-                             'output. Default ","')
-    parser.add_argument('--csv-header', action='store_true', default=False,
-                        help='Print CSV headers')
-    parser.add_argument('--json', action='store_true', default=False,
-                        help='Suppress verbose output, only show basic '
-                             'information in JSON format. Speeds listed in '
-                             'bit/s and not affected by --bytes')
-    parser.add_argument('--list', action='store_true',
-                        help='Display a list of speedtest.net servers '
-                             'sorted by distance')
-    parser.add_argument('--server', type=PARSER_TYPE_INT, action='append',
-                        help='Specify a server ID to test against. Can be '
-                             'supplied multiple times')
-    parser.add_argument('--exclude', type=PARSER_TYPE_INT, action='append',
-                        help='Exclude a server from selection. Can be '
-                             'supplied multiple times')
-    parser.add_argument('--mini', help='URL of the Speedtest Mini server')
-    parser.add_argument('--source', help='Source IP address to bind to')
-    parser.add_argument('--timeout', default=10, type=PARSER_TYPE_FLOAT,
-                        help='HTTP timeout in seconds. Default 10')
-    parser.add_argument('--secure', action='store_true',
-                        help='Use HTTPS instead of HTTP when communicating '
-                             'with speedtest.net operated servers')
-    parser.add_argument('--no-pre-allocate', dest='pre_allocate',
-                        action='store_const', default=True, const=False,
-                        help='Do not pre allocate upload data. Pre allocation '
-                             'is enabled by default to improve upload '
-                             'performance. To support systems with '
-                             'insufficient memory, use this option to avoid a '
-                             'MemoryError')
-    parser.add_argument('--version', action='store_true',
-                        help='Show the version number and exit')
-    parser.add_argument('--debug', action='store_true',
-                        help=ARG_SUPPRESS, default=ARG_SUPPRESS)
-
-    options = parser.parse_args()
-    if isinstance(options, tuple):
-        args = options[0]
-    else:
-        args = options
-    return args
-
-
-def validate_optional_args(args):
-    """Check if an argument was provided that depends on a module that may
-    not be part of the Python standard library.
-
-    If such an argument is supplied, and the module does not exist, exit
-    with an error stating which module is missing.
-    """
-    optional_args = {
-        'json': ('json/simplejson python module', json),
-        'secure': ('SSL support', HTTPSConnection),
-    }
-
-    for arg, info in optional_args.items():
-        if getattr(args, arg, False) and info[1] is None:
-            raise SystemExit('%s is not installed. --%s is '
-                             'unavailable' % (info[0], arg))
-
-
-def printer(string, quiet=False, debug=False, error=False, **kwargs):
-    """Helper function print a string with various features"""
-
-    if debug and not DEBUG:
-        return
-
-    if debug:
-        if sys.stdout.isatty():
-            out = '\033[1;30mDEBUG: %s\033[0m' % string
-        else:
-            out = 'DEBUG: %s' % string
-    else:
-        out = string
-
-    if error:
-        kwargs['file'] = sys.stderr
-
-    if not quiet:
-        print_(out, **kwargs)
-
-
-def shell():
-    """Run the full speedtest.net test"""
-
-    global DEBUG
-    shutdown_event = threading.Event()
-
-    signal.signal(signal.SIGINT, ctrl_c(shutdown_event))
-
-    args = parse_args()
-
-    # Print the version and exit
-    if args.version:
-        version()
-
-    if not args.download and not args.upload:
-        raise SpeedtestCLIError('Cannot supply both --no-download and '
-                                '--no-upload')
-
-    if len(args.csv_delimiter) != 1:
-        raise SpeedtestCLIError('--csv-delimiter must be a single character')
-
-    if args.csv_header:
-        csv_header(args.csv_delimiter)
-
-    validate_optional_args(args)
-
-    debug = getattr(args, 'debug', False)
-    if debug == 'SUPPRESSHELP':
-        debug = False
-    if debug:
-        DEBUG = True
-
-    if args.simple or args.csv or args.json:
-        quiet = True
-    else:
-        quiet = False
-
-    if args.csv or args.json:
-        machine_format = True
-    else:
-        machine_format = False
-
-    # Don't set a callback if we are running quietly
-    if quiet or debug:
-        callback = do_nothing
-    else:
-        callback = print_dots(shutdown_event)
-
-    printer('Retrieving speedtest.net configuration...', quiet)
-    try:
-        speedtest = Speedtest(
-            source_address=args.source,
-            timeout=args.timeout,
-            secure=args.secure
-        )
-    except (ConfigRetrievalError,) + HTTP_ERRORS:
-        printer('Cannot retrieve speedtest configuration', error=True)
-        raise SpeedtestCLIError(get_exception())
-
-    if args.list:
-        try:
-            speedtest.get_servers()
-        except (ServersRetrievalError,) + HTTP_ERRORS:
-            printer('Cannot retrieve speedtest server list', error=True)
-            raise SpeedtestCLIError(get_exception())
-
-        for _, servers in sorted(speedtest.servers.items()):
-            for server in servers:
-                line = ('%(id)5s) %(sponsor)s (%(name)s, %(country)s) '
-                        '[%(d)0.2f km]' % server)
-                try:
-                    printer(line)
-                except IOError:
-                    e = get_exception()
-                    if e.errno != errno.EPIPE:
-                        raise
-        sys.exit(0)
-
-    printer('Testing from %(isp)s (%(ip)s)...' % speedtest.config['client'],
-            quiet)
-
-    if not args.mini:
-        printer('Retrieving speedtest.net server list...', quiet)
-        try:
-            speedtest.get_servers(servers=args.server, exclude=args.exclude)
-        except NoMatchedServers:
-            raise SpeedtestCLIError(
-                'No matched servers: %s' %
-                ', '.join('%s' % s for s in args.server)
-            )
-        except (ServersRetrievalError,) + HTTP_ERRORS:
-            printer('Cannot retrieve speedtest server list', error=True)
-            raise SpeedtestCLIError(get_exception())
-        except InvalidServerIDType:
-            raise SpeedtestCLIError(
-                '%s is an invalid server type, must '
-                'be an int' % ', '.join('%s' % s for s in args.server)
-            )
-
-        if args.server and len(args.server) == 1:
-            printer('Retrieving information for the selected server...', quiet)
-        else:
-            printer('Selecting best server based on ping...', quiet)
-        speedtest.get_best_server()
-    elif args.mini:
-        speedtest.get_best_server(speedtest.set_mini_server(args.mini))
-
-    results = speedtest.results
-
-    printer('Hosted by %(sponsor)s (%(name)s) [%(d)0.2f km]: '
-            '%(latency)s ms' % results.server, quiet)
-
-    if args.download:
-        printer('Testing download speed', quiet,
-                end=('', '\n')[bool(debug)])
-        speedtest.download(
-            callback=callback,
-            threads=(None, 1)[args.single]
-        )
-        printer('Download: %0.2f M%s/s' %
-                ((results.download / 1000.0 / 1000.0) / args.units[1],
-                 args.units[0]),
-                quiet)
-    else:
-        printer('Skipping download test', quiet)
-
-    if args.upload:
-        printer('Testing upload speed', quiet,
-                end=('', '\n')[bool(debug)])
-        speedtest.upload(
-            callback=callback,
-            pre_allocate=args.pre_allocate,
-            threads=(None, 1)[args.single]
-        )
-        printer('Upload: %0.2f M%s/s' %
-                ((results.upload / 1000.0 / 1000.0) / args.units[1],
-                 args.units[0]),
-                quiet)
-    else:
-        printer('Skipping upload test', quiet)
-
-    printer('Results:\n%r' % results.dict(), debug=True)
-
-    if not args.simple and args.share:
-        results.share()
-
-    if args.simple:
-        printer('Ping: %s ms\nDownload: %0.2f M%s/s\nUpload: %0.2f M%s/s' %
-                (results.ping,
-                 (results.download / 1000.0 / 1000.0) / args.units[1],
-                 args.units[0],
-                 (results.upload / 1000.0 / 1000.0) / args.units[1],
-                 args.units[0]))
-    elif args.csv:
-        printer(results.csv(delimiter=args.csv_delimiter))
-    elif args.json:
-        printer(results.json())
-
-    if args.share and not machine_format:
-        printer('Share results: %s' % results.share())
-
-
-def main():
-    try:
-        shell()
-    except KeyboardInterrupt:
-        printer('\nCancelling...', error=True)
-    except (SpeedtestException, SystemExit):
-        e = get_exception()
-        # Ignore a successful exit, or argparse exit
-        if getattr(e, 'code', 1) not in (0, 2):
-            msg = '%s' % e
-            if not msg:
-                msg = '%r' % e
-            raise SystemExit('ERROR: %s' % msg)
-
-
-if __name__ == '__main__':
-    main()
